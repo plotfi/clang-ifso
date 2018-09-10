@@ -245,6 +245,7 @@ protected:
     StringRef MachineType = llvm::StringSwitch<StringRef>(ArchName)
       .Case("x86_64", "EM_X86_64")
       .Case("x86", "EM_386")
+      .Case("i386", "EM_386")
       .Case("i686", "EM_386")
       .Case("aarch64", "EM_AARCH64")
       .Case("arm", "EM_ARM")
