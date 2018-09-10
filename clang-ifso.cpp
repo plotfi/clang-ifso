@@ -1,4 +1,4 @@
-//===- PrintFunctionNames.cpp ---------------------------------------------===//
+//===- IfsoFunctionNames.cpp ----------------------------------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -44,18 +44,18 @@ bool writeFuncOrVarName(MangleContext *MC, const NamedDecl *D,
 
 #define DEBUG_IFSO 0
 
-class PrintFunctionsConsumer : public ASTConsumer {
+class IfsoFunctionsConsumer : public ASTConsumer {
   CompilerInstance &Instance;
   std::set<std::string> ParsedTemplates;
 
 public:
-  PrintFunctionsConsumer(CompilerInstance &Instance,
+  IfsoFunctionsConsumer(CompilerInstance &Instance,
                          std::set<std::string> ParsedTemplates)
       : Instance(Instance), ParsedTemplates(ParsedTemplates) {}
 
   std::vector<std::string> Names;
 
-  virtual ~PrintFunctionsConsumer() {
+  virtual ~IfsoFunctionsConsumer() {
     llvm::errs() << "  Global:\n";
     for (auto Name : Names) {
       llvm::errs() << "    - Name:            " << Name << "\n";
@@ -222,7 +222,7 @@ public:
   }
 };
 
-class PrintFunctionNamesAction : public PluginASTAction {
+class IfsoFunctionNamesAction : public PluginASTAction {
   std::set<std::string> ParsedTemplates;
 
 protected:
@@ -269,13 +269,13 @@ protected:
     llvm::errs() << "      Type:            STT_SECTION\n";
     llvm::errs() << "      Section:         .dynstr\n";
 
-    return llvm::make_unique<PrintFunctionsConsumer>(CI, ParsedTemplates);
+    return llvm::make_unique<IfsoFunctionsConsumer>(CI, ParsedTemplates);
   }
 
   bool ParseArgs(const CompilerInstance &CI,
                  const std::vector<std::string> &args) override {
     for (unsigned i = 0, e = args.size(); i != e; ++i) {
-      llvm::errs() << "PrintFunctionNames arg = " << args[i] << "\n";
+      llvm::errs() << "IfsoFunctionNames arg = " << args[i] << "\n";
     }
     return true;
   }
@@ -283,5 +283,5 @@ protected:
 
 } // namespace
 
-static FrontendPluginRegistry::Add<PrintFunctionNamesAction>
+static FrontendPluginRegistry::Add<IfsoFunctionNamesAction>
     X("print-fns", "print function names");
