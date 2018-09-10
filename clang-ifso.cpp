@@ -7,8 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Example clang plugin which simply prints the names of all the top-level decls
-// in the input file.
+// Clang plugin for generating ELF shared object library interfaces.
 //
 //===----------------------------------------------------------------------===//
 
@@ -84,16 +83,13 @@ public:
       llvm::raw_svector_ostream FrontendBufOS(FrontendBuf);
 
       if (const NamedDecl *ND = dyn_cast<NamedDecl>(D)) {
-
         #if DEBUG_IFSO
         llvm::errs() << "[NamedDecl] top-level-decl: " << ND->getName();
         #endif
+
         bool isWeak = false;
         if (const ValueDecl *VD = dyn_cast<ValueDecl>(D)) {
           isWeak = VD->isWeak();
-          #if DEBUG_IFSO
-          llvm::errs() << " ValueDecl ";
-          #endif
         }
 
         #if DEBUG_IFSO
@@ -102,23 +98,37 @@ public:
 
         if (D->isFunctionOrFunctionTemplate()) {
           if (D->isTemplateDecl()) {
-            MangleContext *MC = ND->getASTContext().createMangleContext();
-            std::string Name = writeFuncOrVarName(MC, ND, FrontendBufOS)
-                                   ? D->getDescribedTemplate()->getName()
-                                   : FrontendBufOS.str();
-            Names.push_back(Name);
             #if DEBUG_IFSO
             llvm::errs() << "\t[TemplateDecl] top-level-decl: " << Name << "\n";
             #endif
+
+            MangleContext *MC = ND->getASTContext().createMangleContext();
+            std::string Name;
+            if (auto *FTD = dyn_cast<FunctionTemplateDecl>(D)) {
+
+              Name =
+                  writeFuncOrVarName(MC, FTD->getTemplatedDecl(), FrontendBufOS)
+                      ? D->getDescribedTemplate()->getName()
+                      : FrontendBufOS.str();
+
+            } else {
+
+              Name = writeFuncOrVarName(MC, ND, FrontendBufOS)
+                         ? D->getDescribedTemplate()->getName()
+                         : FrontendBufOS.str();
+            }
+
+            Names.push_back(Name);
           } else {
+            #if DEBUG_IFSO
+            llvm::errs() << "\t[FunctionDecl] top-level-decl: " << Name << "\n";
+            #endif
+
             MangleContext *MC = ND->getASTContext().createMangleContext();
             std::string Name = writeFuncOrVarName(MC, ND, FrontendBufOS)
                                    ? D->getAsFunction()->getName()
                                    : FrontendBufOS.str();
             Names.push_back(Name);
-            #if DEBUG_IFSO
-            llvm::errs() << "\t[FunctionDecl] top-level-decl: " << Name << "\n";
-            #endif
 
             if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(D)) {
               if (FunctionTemplateDecl *FTD =
@@ -127,9 +137,6 @@ public:
                 bool isWeak = false;
                 if (const ValueDecl *VD = dyn_cast<ValueDecl>(FTD)) {
                   isWeak = VD->isWeak();
-                  #if DEBUG_IFSO
-                  llvm::errs() << "<<< FTD ~~~~~~~ValueDecl ";
-                  #endif
                 }
                 #if DEBUG_IFSO
                 llvm::errs() << " isWeak: " << (isWeak ? "yes" : "no") << "\n";
@@ -139,7 +146,6 @@ public:
           }
         } else {
           if (const NamespaceDecl *NSD = dyn_cast<NamespaceDecl>(D)) {
-
             #if DEBUG_IFSO
             llvm::errs() << "\t[NamespaceDecl] top-level-decl: \""
                          << NSD->getName() << "\"\n";
@@ -155,39 +161,19 @@ public:
                 #endif
 
                 #if 0
-                ND->dump();
                 if (ND->isFunctionOrFunctionTemplate()) {
-                        MangleContext *MC = ND->getASTContext().createMangleContext();
-                        std::string Name = writeFuncOrVarName(MC, ND, FrontendBufOS)
-                          ? ND->getName()
-                          : FrontendBufOS.str();
-                        Names.push_back(Name);
+                  MangleContext *MC = ND->getASTContext().createMangleContext();
+                  std::string Name = writeFuncOrVarName(MC, ND, FrontendBufOS)
+                    ? ND->getName()
+                    : FrontendBufOS.str();
+                  Names.push_back(Name);
                 }
                 #endif
 
-                if (ND->isTemplateDecl()) {
-
-                  #if DEBUG_IFSO
-                  llvm::errs() << " ~~~~~~~ isTemplated!! ";
-                  #endif
-
-                  auto TD = dyn_cast<TemplateDecl>(I);
-                  auto RealTD = TD->getTemplatedDecl();
-
-                  if (const ValueDecl *VD = dyn_cast<ValueDecl>(RealTD)) {
-
-                    #if DEBUG_IFSO
-                    llvm::errs() << " Templated ISWEAK!!! ";
-                    #endif
-                  }
-                }
 
                 bool isWeak = false;
                 if (const ValueDecl *VD = dyn_cast<ValueDecl>(I)) {
                   isWeak = VD->isWeak();
-                  #if DEBUG_IFSO
-                  llvm::errs() << " ~~~~~~~ValueDecl ";
-                  #endif
                 }
                 #if DEBUG_IFSO
                 llvm::errs() << " isWeak: " << (isWeak ? "yes" : "no") << "\n";
@@ -244,10 +230,33 @@ protected:
                                                  llvm::StringRef) override {
     llvm::errs() << "--- !ELF\n";
     llvm::errs() << "FileHeader:\n";
-    llvm::errs() << "  Class:           ELFCLASS64\n";
-    llvm::errs() << "  Data:            ELFDATA2LSB\n";
+    llvm::errs() << "  Class:           ELFCLASS";
+    llvm::errs() << (CI.getTarget().getTriple().isArch64Bit() ? "64" : "32");
+    llvm::errs() << "\n";
+    llvm::errs() << "  Data:            ELFDATA2";
+    llvm::errs() << (CI.getTarget().getTriple().isLittleEndian() ? "LSB" : "MSB");
+    llvm::errs() << "\n";
     llvm::errs() << "  Type:            ET_DYN\n";
-    llvm::errs() << "  Machine:         EM_X86_64\n";
+    llvm::errs() << "  Machine:         ";
+    StringRef ArchName = CI.getTarget().getTriple().getArchName();
+    // llvm::errs() << "  ArchName:         " << ArchName << "\n";
+
+
+    StringRef MachineType = llvm::StringSwitch<StringRef>(ArchName)
+      .Case("x86_64", "EM_X86_64")
+      .Case("x86", "EM_386")
+      .Case("i686", "EM_386")
+      .Case("aarch64", "EM_AARCH64")
+      .Case("arm", "EM_ARM")
+      .Default("EM_X86_64");
+
+    llvm::errs() << MachineType;
+    llvm::errs() << "\n";
+
+
+  // Str = printEnum(e->e_machine, makeArrayRef(ElfMachineType));
+  // printFields(OS, "Machine:", Str);
+
     llvm::errs() << "Sections:\n";
     llvm::errs() << "  - Name:            .text\n";
     llvm::errs() << "    Type:            SHT_PROGBITS\n";
@@ -267,31 +276,8 @@ protected:
                  const std::vector<std::string> &args) override {
     for (unsigned i = 0, e = args.size(); i != e; ++i) {
       llvm::errs() << "PrintFunctionNames arg = " << args[i] << "\n";
-
-      // Example error handling.
-      DiagnosticsEngine &D = CI.getDiagnostics();
-      if (args[i] == "-an-error") {
-        unsigned DiagID = D.getCustomDiagID(DiagnosticsEngine::Error,
-                                            "invalid argument '%0'");
-        D.Report(DiagID) << args[i];
-        return false;
-      } else if (args[i] == "-parse-template") {
-        if (i + 1 >= e) {
-          D.Report(D.getCustomDiagID(DiagnosticsEngine::Error,
-                                     "missing -parse-template argument"));
-          return false;
-        }
-        ++i;
-        ParsedTemplates.insert(args[i]);
-      }
     }
-    if (!args.empty() && args[0] == "help")
-      PrintHelp(llvm::errs());
-
     return true;
-  }
-  void PrintHelp(llvm::raw_ostream &ros) {
-    ros << "Help for PrintFunctionNames plugin goes here\n";
   }
 };
 
