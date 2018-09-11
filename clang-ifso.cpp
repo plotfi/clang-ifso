@@ -23,6 +23,84 @@ using namespace clang;
 
 namespace {
 
+class YamlPrintManager {
+  bool IsHeaderPrinted = false;
+  std::vector<std::string> Names;
+  public:
+  ~YamlPrintManager() {
+    llvm::errs() << "  Global:\n";
+    for (auto Name : Names) {
+      llvm::errs() << "    - Name:            " << Name << "\n";
+      llvm::errs() << "      Type:            STT_FUNC\n";
+      llvm::errs() << "      Section:         .text\n";
+    }
+
+    llvm::errs() << "DynamicSymbols:\n";
+
+    llvm::errs() << "  Global:\n";
+    for (auto Name : Names) {
+      llvm::errs() << "    - Name:            " << Name << "\n";
+      llvm::errs() << "      Type:            STT_FUNC\n";
+      llvm::errs() << "      Section:         .text\n";
+    }
+
+    llvm::errs() << "...\n";
+  }
+
+  void PrintHeader(const CompilerInstance &CI) {
+    if (IsHeaderPrinted)
+      return;
+
+    llvm::errs() << "--- !ELF\n";
+    llvm::errs() << "FileHeader:\n";
+    llvm::errs() << "  Class:           ELFCLASS";
+    llvm::errs() << (CI.getTarget().getTriple().isArch64Bit() ? "64" : "32");
+    llvm::errs() << "\n";
+    llvm::errs() << "  Data:            ELFDATA2";
+    llvm::errs() << (CI.getTarget().getTriple().isLittleEndian() ? "LSB" : "MSB");
+    llvm::errs() << "\n";
+    llvm::errs() << "  Type:            ET_DYN\n";
+    llvm::errs() << "  Machine:         ";
+    StringRef ArchName = CI.getTarget().getTriple().getArchName();
+    // llvm::errs() << "  ArchName:         " << ArchName << "\n";
+
+    StringRef MachineType = llvm::StringSwitch<StringRef>(ArchName)
+      .Case("x86_64", "EM_X86_64")
+      .Case("x86", "EM_386")
+      .Case("i386", "EM_386")
+      .Case("i686", "EM_386")
+      .Case("aarch64", "EM_AARCH64")
+      .Case("arm", "EM_ARM")
+      .Default("EM_X86_64");
+
+    llvm::errs() << MachineType;
+    llvm::errs() << "\n";
+
+    // Str = printEnum(e->e_machine, makeArrayRef(ElfMachineType));
+    // printFields(OS, "Machine:", Str);
+
+    llvm::errs() << "Sections:\n";
+    llvm::errs() << "  - Name:            .text\n";
+    llvm::errs() << "    Type:            SHT_PROGBITS\n";
+    llvm::errs() << "Symbols:\n";
+    llvm::errs() << "  Local:\n";
+    llvm::errs() << "    - Name:            .dynsym\n";
+    llvm::errs() << "      Type:            STT_SECTION\n";
+    llvm::errs() << "      Section:         .dynsym\n";
+    llvm::errs() << "    - Name:            .dynstr\n";
+    llvm::errs() << "      Type:            STT_SECTION\n";
+    llvm::errs() << "      Section:         .dynstr\n";
+
+    IsHeaderPrinted = true;
+  }
+
+  void addName(std::string Name) {
+    Names.push_back(Name);
+  }
+};
+
+YamlPrintManager YPM;
+
 bool writeFuncOrVarName(MangleContext *MC, const NamedDecl *D,
                         raw_ostream &OS) {
   if (MC->shouldMangleDeclName(D)) {
@@ -56,23 +134,9 @@ public:
   std::vector<std::string> Names;
 
   virtual ~IfsoFunctionsConsumer() {
-    llvm::errs() << "  Global:\n";
-    for (auto Name : Names) {
-      llvm::errs() << "    - Name:            " << Name << "\n";
-      llvm::errs() << "      Type:            STT_FUNC\n";
-      llvm::errs() << "      Section:         .text\n";
+    for (std::string &Name : Names) {
+      YPM.addName(Name);
     }
-
-    llvm::errs() << "DynamicSymbols:\n";
-
-    llvm::errs() << "  Global:\n";
-    for (auto Name : Names) {
-      llvm::errs() << "    - Name:            " << Name << "\n";
-      llvm::errs() << "      Type:            STT_FUNC\n";
-      llvm::errs() << "      Section:         .text\n";
-    }
-
-    llvm::errs() << "...\n";
   }
 
   bool HandleTopLevelDecl(DeclGroupRef DG) override {
@@ -228,48 +292,7 @@ class IfsoFunctionNamesAction : public PluginASTAction {
 protected:
   std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI,
                                                  llvm::StringRef) override {
-    llvm::errs() << "--- !ELF\n";
-    llvm::errs() << "FileHeader:\n";
-    llvm::errs() << "  Class:           ELFCLASS";
-    llvm::errs() << (CI.getTarget().getTriple().isArch64Bit() ? "64" : "32");
-    llvm::errs() << "\n";
-    llvm::errs() << "  Data:            ELFDATA2";
-    llvm::errs() << (CI.getTarget().getTriple().isLittleEndian() ? "LSB" : "MSB");
-    llvm::errs() << "\n";
-    llvm::errs() << "  Type:            ET_DYN\n";
-    llvm::errs() << "  Machine:         ";
-    StringRef ArchName = CI.getTarget().getTriple().getArchName();
-    // llvm::errs() << "  ArchName:         " << ArchName << "\n";
-
-
-    StringRef MachineType = llvm::StringSwitch<StringRef>(ArchName)
-      .Case("x86_64", "EM_X86_64")
-      .Case("x86", "EM_386")
-      .Case("i386", "EM_386")
-      .Case("i686", "EM_386")
-      .Case("aarch64", "EM_AARCH64")
-      .Case("arm", "EM_ARM")
-      .Default("EM_X86_64");
-
-    llvm::errs() << MachineType;
-    llvm::errs() << "\n";
-
-
-  // Str = printEnum(e->e_machine, makeArrayRef(ElfMachineType));
-  // printFields(OS, "Machine:", Str);
-
-    llvm::errs() << "Sections:\n";
-    llvm::errs() << "  - Name:            .text\n";
-    llvm::errs() << "    Type:            SHT_PROGBITS\n";
-    llvm::errs() << "Symbols:\n";
-    llvm::errs() << "  Local:\n";
-    llvm::errs() << "    - Name:            .dynsym\n";
-    llvm::errs() << "      Type:            STT_SECTION\n";
-    llvm::errs() << "      Section:         .dynsym\n";
-    llvm::errs() << "    - Name:            .dynstr\n";
-    llvm::errs() << "      Type:            STT_SECTION\n";
-    llvm::errs() << "      Section:         .dynstr\n";
-
+    YPM.PrintHeader(CI);
     return llvm::make_unique<IfsoFunctionsConsumer>(CI, ParsedTemplates);
   }
 
