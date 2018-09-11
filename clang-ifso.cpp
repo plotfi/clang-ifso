@@ -141,8 +141,7 @@ public:
 
   bool HandleTopLevelDecl(DeclGroupRef DG) override {
 
-    for (DeclGroupRef::iterator i = DG.begin(), e = DG.end(); i != e; ++i) {
-      const Decl *D = *i;
+    for (const auto &D: DG) {
       SmallString<128> FrontendBuf;
       llvm::raw_svector_ostream FrontendBufOS(FrontendBuf);
 
@@ -194,12 +193,12 @@ public:
                                    : FrontendBufOS.str();
             Names.push_back(Name);
 
-            if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(D)) {
+            if (const auto *FD = dyn_cast<FunctionDecl>(D)) {
               if (FunctionTemplateDecl *FTD =
                       FD->getDescribedFunctionTemplate()) {
 
                 bool isWeak = false;
-                if (const ValueDecl *VD = dyn_cast<ValueDecl>(FTD)) {
+                if (const auto *VD = dyn_cast<ValueDecl>(FTD)) {
                   isWeak = VD->isWeak();
                 }
                 #if DEBUG_IFSO
@@ -209,14 +208,15 @@ public:
             }
           }
         } else {
-          if (const NamespaceDecl *NSD = dyn_cast<NamespaceDecl>(D)) {
+          if (const auto *NSD = dyn_cast<NamespaceDecl>(D)) {
             #if DEBUG_IFSO
             llvm::errs() << "\t[NamespaceDecl] top-level-decl: \""
                          << NSD->getName() << "\"\n";
             #endif
 
+            // TODO(compnerd) specify type
             for (auto *I : NSD->decls())
-              if (const NamedDecl *ND = dyn_cast<NamedDecl>(I)) {
+              if (const auto *ND = dyn_cast<NamedDecl>(I)) {
 
                 #if DEBUG_IFSO
                 llvm::errs()
@@ -298,9 +298,8 @@ protected:
 
   bool ParseArgs(const CompilerInstance &CI,
                  const std::vector<std::string> &args) override {
-    for (unsigned i = 0, e = args.size(); i != e; ++i) {
-      llvm::errs() << "IfsoFunctionNames arg = " << args[i] << "\n";
-    }
+    for (const auto &arg: args)
+      llvm::errs() << "IfsoFunctionNames arg = " << arg << "\n";
     return true;
   }
 };
