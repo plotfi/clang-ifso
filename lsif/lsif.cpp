@@ -2,12 +2,13 @@
 #include "clang/AST/Mangle.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
+#include "clang/Driver/Options.h"
 #include "clang/Index/CodegenNameGenerator.h"
 #include "clang/Lex/Lexer.h"
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "clang/Tooling/Tooling.h"
+#include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
-#include "clang/Driver/Options.h"
 
 using namespace clang;
 using namespace clang::index;
@@ -44,7 +45,7 @@ AST_MATCHER_P(ObjCImplementationDecl, hasInterface,
 } // namespace clang
 
 bool writeFuncOrVarName(MangleContext *MC, const NamedDecl *D,
-    raw_ostream &OS) {
+                        raw_ostream &OS) {
   if (MC->shouldMangleDeclName(D)) {
     if (const auto *CtorD = dyn_cast<CXXConstructorDecl>(D))
       MC->mangleCXXCtor(CtorD, Ctor_Complete, OS);
@@ -63,9 +64,10 @@ bool writeFuncOrVarName(MangleContext *MC, const NamedDecl *D,
 }
 
 class YamlPrintManager {
-  bool IsHeaderPrinted = false;
+  // bool IsHeaderPrinted = false;
   std::vector<std::string> Names;
-  public:
+
+public:
   ~YamlPrintManager() {
     llvm::errs() << "  Global:\n";
     for (auto Name : Names) {
@@ -135,9 +137,7 @@ class YamlPrintManager {
   }
 #endif
 
-  void addName(std::string Name) {
-    Names.push_back(Name);
-  }
+  void addName(std::string Name) { Names.push_back(Name); }
 };
 
 YamlPrintManager YPM;
@@ -170,14 +170,16 @@ int main(int argc, const char **argv) {
   cl::OptionCategory Category("lsif options");
   CommonOptionsParser Opt(argc, argv, Category);
 
+  unsigned MissingArgIndex = 0;
+  unsigned MissingArgCount = 0;
 
   std::unique_ptr<opt::OptTable> Opts = createDriverOptTable();
-  const unsigned IncludedFlagsBitmask = options::CC1Option;
-  InputArgList Args =
-    Opts->ParseArgs(llvm::makeArrayRef(argv + 1, argc), MissingArgIndex);
+  // const unsigned IncludedFlagsBitmask = options::CC1Option;
+  InputArgList Args = Opts->ParseArgs(llvm::makeArrayRef(argv + 1, argc),
+                                      MissingArgIndex, MissingArgCount);
 
- // std::string CPU = Args->getLastArgValue(OPT_target_cpu);
- //  std::string Triple = Args->getLastArgValue(OPT_triple);
+  std::string CPU = Args.getLastArgValue(OPT_target_cpu);
+  std::string Triple = Args.getLastArgValue(OPT_triple);
 
   ClangTool Tool(Opt.getCompilations(), Opt.getSourcePathList());
 
@@ -199,4 +201,3 @@ int main(int argc, const char **argv) {
   auto Success = 0 == Tool.run(newFrontendActionFactory(&Finder).get());
   return Success && Handler.ProducedSymbols ? EXIT_SUCCESS : EXIT_FAILURE;
 }
-
