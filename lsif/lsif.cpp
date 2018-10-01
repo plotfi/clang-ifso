@@ -9,6 +9,7 @@
 #include "clang/Tooling/Tooling.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
+#include "clang/Frontend/CompilerInstance.h"
 
 using namespace clang;
 using namespace clang::index;
@@ -64,11 +65,10 @@ bool writeFuncOrVarName(MangleContext *MC, const NamedDecl *D,
 }
 
 class YamlPrintManager {
-  // bool IsHeaderPrinted = false;
   std::vector<std::string> Names;
 
 public:
-  ~YamlPrintManager() {
+  void PrintSymbols() {
     llvm::errs() << "  Global:\n";
     for (auto Name : Names) {
       llvm::errs() << "    - Name:            " << Name << "\n";
@@ -88,11 +88,7 @@ public:
     llvm::errs() << "...\n";
   }
 
-#if 0
   void PrintHeader(const CompilerInstance &CI) {
-    if (IsHeaderPrinted)
-      return;
-
     llvm::errs() << "--- !ELF\n";
     llvm::errs() << "FileHeader:\n";
     llvm::errs() << "  Class:           ELFCLASS";
@@ -133,9 +129,7 @@ public:
     llvm::errs() << "      Type:            STT_SECTION\n";
     llvm::errs() << "      Section:         .dynstr\n";
 
-    IsHeaderPrinted = true;
   }
-#endif
 
   void addName(std::string Name) { Names.push_back(Name); }
 };
@@ -160,7 +154,7 @@ public:
         Name = FrontendBufOS.str();
     }
 
-    errs() << Name << "\n";
+    YPM.addName(Name);
   }
 
   bool ProducedSymbols = false;
@@ -199,5 +193,36 @@ int main(int argc, const char **argv) {
   Finder.addMatcher(id("Definition", Matcher), &Handler);
 
   auto Success = 0 == Tool.run(newFrontendActionFactory(&Finder).get());
+
+#if 0
+  std::vector<const char*> Argv;
+  for (int i = 0; i < argc; i++)
+    Argv.push_back(argv[i]);
+
+  IntrusiveRefCntPtr<DiagnosticOptions> DiagOpts = new DiagnosticOptions();
+  ParseDiagnosticArgs(*DiagOpts, Args);
+  DiagnosticsEngine Diagnostics(
+      IntrusiveRefCntPtr<DiagnosticIDs>(new DiagnosticIDs()), &*DiagOpts);
+
+  const std::unique_ptr<driver::Driver> Driver(
+      newDriver(&Diagnostics, argv[0], Tool.getFiles().getVirtualFileSystem()));
+  const std::unique_ptr<driver::Compilation> Compilation(
+      Driver->BuildCompilation(llvm::makeArrayRef(Argv)));
+  if (!Compilation)
+    return EXIT_FAILURE;
+
+  const llvm::opt::ArgStringList *const CC1Args = getCC1Arguments(
+      &Diagnostics, Compilation.get());
+  if (!CC1Args)
+    return EXIT_FAILURE;
+
+  std::unique_ptr<CompilerInvocation> Invocation(
+      newInvocation(&Diagnostics, *CC1Args));
+#endif
+
+
+  YPM.PrintSymbols();
+  errs() << "CPU: " << CPU << "\n";
+  errs() << "Triple: " << Triple << "\n";
   return Success && Handler.ProducedSymbols ? EXIT_SUCCESS : EXIT_FAILURE;
 }
